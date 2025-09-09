@@ -21,9 +21,22 @@ __pycache__/
 .Python
 *.so
 .pytest_cache/
+venv/
+.venv/
+env/
+.env/
+pip-log.txt
+pip-delete-this-directory.txt
+*.egg-info/
+dist/
+build/
 
 # IDE
 .vscode/
+.vscode/settings.json
+.vscode/tasks.json
+.vscode/launch.json
+.vscode/extensions.json
 .idea/
 *.swp
 *.swo
