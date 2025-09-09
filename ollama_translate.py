@@ -180,7 +180,7 @@ def main(args):
     # 入力ファイルを読み込み、最後の行の改行情報を保持
     with open(args.input, 'r', encoding='utf_8') as inputfile:
         lines = inputfile.readlines()
-    
+
     with open(args.output, 'w', encoding='utf_8') as outputfile:
         for line_no, raw_line in enumerate(lines, 1):
             line = processor_words(raw_line, preprocessor_words)
@@ -199,14 +199,14 @@ def main(args):
                 # 一時コード数をカウント（postprocessor適用前）
                 original_newline_count = line.count('[NLINE]')
                 translated_newline_count = translated_line.count('[NLINE]')
-                
+
                 # 改行コード数が一致しない場合は警告
                 if original_newline_count != translated_newline_count:
                     logger.warning(f"行{line_no}: 改行コード数が不一致 - 元:{original_newline_count}, 翻訳後:{translated_newline_count}")
 
                 translated_line = processor_words(
                     translated_line, postprocessor_words)
-                
+
                 # カラータグ補完
                 translated_line = fix_color_tags(translated_line.strip(), line_no)
 
