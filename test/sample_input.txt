@@ -1,0 +1,9 @@
+Normal translation text
+[c][FF0000]Red colored text[-][/c]
+Text with <script>alert('XSS')</script> injection
+[b]Bold text[/b] with formatting
+Text & symbols < > " ' characters
+Multi
+line
+text
+Text with	tabs	and spaces

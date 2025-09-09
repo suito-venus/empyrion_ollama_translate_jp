@@ -9,7 +9,8 @@ from tag_validator import check_translation_tags
 from content_filter_detector import detect_content_filter
 from color_tag_fixer import fix_color_tags
 from text_preview import generate_html_preview
-# from punctuation_formatter import format_punctuation
+from punctuation_formatter import format_punctuation
+
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s]: %(message)s')
 logger = logging.getLogger(__name__)

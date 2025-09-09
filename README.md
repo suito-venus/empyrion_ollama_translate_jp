@@ -66,6 +66,12 @@ empyrion_ollama_translate_jp/
 ├── preprocessor_words.tsv      # 前処理ルール
 ├── postprocessor_words.tsv     # 後処理ルール
 ├── requirements.txt            # Python依存関係
+├── test/                       # テストファイル
+│   ├── run_all_tests.py        # 全テスト実行
+│   ├── test_path_traversal.py  # Path Traversal脆弱性テスト
+│   ├── test_log_injection.py   # Log Injection脆弱性テスト
+│   ├── test_xss_vulnerability.py # XSS脆弱性テスト
+│   └── sample_input.txt        # テスト用サンプルデータ
 └── README.md                   # このファイル
 ```
 
@@ -155,6 +161,26 @@ python ollama_translate.py -i Empyrion_localization.txt
 ```
 検索パターン\t置換文字列
 ```
+
+## 🧪 テスト実行
+
+### セキュリティテスト
+セキュリティ脆弱性の確認と修正前後の動作比較ができます：
+
+```bash
+# 全セキュリティテストを実行
+python test/run_all_tests.py
+
+# 個別テスト実行
+python test/test_path_traversal.py    # Path Traversal脆弱性テスト
+python test/test_log_injection.py     # Log Injection脆弱性テスト
+python test/test_xss_vulnerability.py # XSS脆弱性テスト
+```
+
+### テスト内容
+- **Path Traversal**: ファイルパス操作の安全性確認
+- **Log Injection**: ログ出力時の入力サニタイズ確認
+- **XSS**: HTMLプレビュー生成時のエスケープ処理確認
 
 ## 🐛 トラブルシューティング
 
