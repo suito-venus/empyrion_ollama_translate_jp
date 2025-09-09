@@ -1,0 +1,33 @@
+# 作業ファイル
+*.code-workspace
+作業メモ.txt
+ProjectEden_Localization_work.txt
+ProjectEden_Localization_work*.txt
+ReforgedEden_Localization_work.txt
+ReforgedEden_Localization_work*.txt
+Vanilla_Localizations_work*.txt
+*.zip
+
+# 翻訳結果ファイル
+*_ollama_*.txt
+*_ollama_*.html
+*_preview.html
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
