@@ -41,6 +41,10 @@ ollama pull gemma2:27b-instruct-q5_0
 
 ### 3. Pythonパッケージインストール
 ```bash
+# requirements.txtからインストール（推奨）
+pip install -r requirements.txt
+
+# または直接インストール
 pip install ollama
 ```
 
@@ -61,6 +65,7 @@ empyrion_ollama_translate_jp/
 ├── deepl_glossary_empyrion.json # 用語集
 ├── preprocessor_words.tsv      # 前処理ルール
 ├── postprocessor_words.tsv     # 後処理ルール
+├── requirements.txt            # Python依存関係
 └── README.md                   # このファイル
 ```
 

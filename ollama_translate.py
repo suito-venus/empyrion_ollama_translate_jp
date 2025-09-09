@@ -9,12 +9,13 @@ from tag_validator import check_translation_tags
 from content_filter_detector import detect_content_filter
 from color_tag_fixer import fix_color_tags
 from text_preview import generate_html_preview
-from punctuation_formatter import format_punctuation
+# from punctuation_formatter import format_punctuation
 
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s]: %(message)s')
 logger = logging.getLogger(__name__)
 
 # モデル名を一箇所で管理
+
 # MODEL_NAME = 'gemma-2-llama-swallow-27b-it-v01-q5_0'
 MODEL_NAME = 'gemma2:27b-instruct-q5_0'
 # MODEL_NAME = 'gpt-oss:120b'
@@ -44,7 +45,6 @@ def ollama_translate_line(text: str, glossary: dict) -> str:
 
         response = ollama.chat(
             model=MODEL_NAME,
-            
             messages=[
                 {
                     'role': 'user',
