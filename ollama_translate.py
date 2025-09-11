@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 # モデル名を一箇所で管理
 
 # MODEL_NAME = 'gemma-2-llama-swallow-27b-it-v01-q5_0'
-MODEL_NAME = 'gemma2:27b-instruct-q5_0'
-# MODEL_NAME = 'gpt-oss:120b'
+# MODEL_NAME = 'gemma2:27b-instruct-q5_0'
+MODEL_NAME = 'gpt-oss:120b'
 
 
 def ollama_translate_line(text: str, glossary: dict) -> str:
