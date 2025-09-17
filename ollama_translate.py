@@ -5,6 +5,8 @@ import argparse
 from datetime import datetime as dt
 import time
 import logging
+import os
+import subprocess
 from tag_validator import check_translation_tags
 from content_filter_detector import detect_content_filter
 from color_tag_fixer import fix_color_tags
@@ -12,7 +14,7 @@ from text_preview import generate_html_preview
 from punctuation_formatter import format_punctuation
 
 
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s]: %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s]: %(message)s')
 logger = logging.getLogger(__name__)
 
 # モデル名を一箇所で管理
@@ -38,7 +40,7 @@ def ollama_translate_line(text: str, glossary: dict) -> str:
 6. 結果は１行で出力してください。
 
 用語集:
-{chr(10).join([f"{en}→{ja}" for en, ja in glossary.items()])}
+{', '.join([f"{en}→{ja}" for en, ja in glossary.items()])}
 
 テキスト: {text}
 
@@ -67,7 +69,8 @@ def ollama_translate_line(text: str, glossary: dict) -> str:
         japanese_chars = re.findall(r'[ひらがなカタカナ漢字]', clean_text)
 
         # 英語の単語が多く、日本語文字が少ない場合は英語と判定
-        return len(english_words) > 3 and len(japanese_chars) < len(english_words)
+        return (len(english_words) > 3 and
+                len(japanese_chars) < len(english_words))
 
     try:
         logger.debug(f"使用モデル: {MODEL_NAME}")
@@ -116,7 +119,8 @@ def filter_glossary_for_text(text: str, full_glossary: dict) -> dict:
 
     for en_term, ja_term in full_glossary.items():
         # 用語が翻訳対象テキストに含まれているかチェック
-        if (en_term.lower() in words_in_text or any(word in en_term.lower() for word in words_in_text)):
+        if (en_term.lower() in words_in_text or
+                any(word in en_term.lower() for word in words_in_text)):
             filtered_glossary[en_term] = ja_term
 
     return filtered_glossary
@@ -142,6 +146,67 @@ def processor_words(src_str: str, processor_words: list[str]) -> str:
     return dest_str
 
 
+def get_model_size_gb(model_name):
+    """モデルのサイズをGB単位で取得"""
+    try:
+        models = ollama.list()
+        logger.debug(f"モデル情報: {models}")
+
+        for model in models['models']:
+            logger.debug(f"モデル詳細: {model}")
+            # 様々なキーを試す
+            name = model.get('name') or model.get('model') or model.get('id', '')
+            if name == model_name:
+                size_bytes = model.get('size', 0)
+                size_gb = size_bytes / (1024**3)
+                logger.info(f"モデルサイズ: {size_gb:.1f}GB")
+                return size_gb
+        logger.error(f"モデル {model_name} が見つかりません")
+        return None
+    except Exception as e:
+        logger.error(f"モデルサイズ取得エラー: {e}")
+        logger.error(f"モデル情報の構造: {models if 'models' in locals() else 'N/A'}")
+        exit(1)
+
+
+def get_available_vram_gb():
+    """利用可能なVRAMをGB単位で取得"""
+    try:
+        result = subprocess.run(
+            ['nvidia-smi', '--query-gpu=memory.free',
+             '--format=csv,noheader,nounits'],
+            capture_output=True, text=True)
+        if result.returncode == 0:
+            vram_mb = int(result.stdout.strip().split('\n')[0])
+            vram_gb = vram_mb / 1024
+            logger.info(f"利用可能VRAM: {vram_gb:.1f}GB")
+            return vram_gb
+        else:
+            logger.warning("nvidia-smiコマンドが失敗しました")
+            return 0
+    except Exception as e:
+        logger.error(f"VRAM取得エラー: {e}")
+        exit(1)
+
+
+def setup_cpu_only_if_needed(model_name):
+    """VRAM不足時にCPU実行を設定"""
+    model_size = get_model_size_gb(model_name)
+    available_vram = get_available_vram_gb()
+
+    if model_size and available_vram > 0:
+        required_vram = model_size * 0.8  # 80%のマージン
+        logger.info(f"必要VRAM(推定): {required_vram:.1f}GB")
+
+        if available_vram < required_vram:
+            logger.warning("VRAM不足のためCPU実行に切り替えます")
+            os.environ['CUDA_VISIBLE_DEVICES'] = ''
+            os.environ['OLLAMA_NUM_GPU'] = '0'
+            os.environ['NUM_GPU'] = '0'
+        else:
+            logger.info("GPU使用可能です")
+
+
 def check_ollama_connection():
     """Ollama接続確認"""
     try:
@@ -156,6 +221,8 @@ def check_ollama_connection():
 
             if any(MODEL_NAME in model for model in available_models):
                 logger.info(f"{MODEL_NAME}モデルが利用可能です")
+                # VRAM不足チェック
+                setup_cpu_only_if_needed(MODEL_NAME)
             else:
                 logger.warning(f"{MODEL_NAME}モデルが見つかりません")
                 logger.info(f"利用可能なモデル: {available_models}")
@@ -202,13 +269,17 @@ def main(args):
 
                 # 改行コード数が一致しない場合は警告
                 if original_newline_count != translated_newline_count:
-                    logger.warning(f"行{line_no}: 改行コード数が不一致 - 元:{original_newline_count}, 翻訳後:{translated_newline_count}")
+                    logger.warning(
+                        f"行{line_no}: 改行コード数が不一致 - "
+                        f"元:{original_newline_count}, "
+                        f"翻訳後:{translated_newline_count}")
 
                 translated_line = processor_words(
                     translated_line, postprocessor_words)
 
                 # カラータグ補完
-                translated_line = fix_color_tags(translated_line.strip(), line_no)
+                translated_line = fix_color_tags(
+                    translated_line.strip(), line_no)
 
                 # 句読点整形
                 translated_line = format_punctuation(translated_line, line_no)
@@ -236,7 +307,6 @@ def main(args):
         translated_lines = f.readlines()
 
     # HTMLプレビューファイル名を生成
-    import os
     base_name = os.path.splitext(args.output)[0]
     preview_file = f"{base_name}_preview.html"
 
@@ -256,7 +326,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.output is None:
-        import os
         tdatetime = dt.now()
         date_time_str = tdatetime.strftime('%Y%m%d_%H%M%S')
 
