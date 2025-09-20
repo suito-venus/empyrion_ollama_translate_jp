@@ -24,12 +24,37 @@ logger = logging.getLogger(__name__)
 MODEL_NAME = 'gpt-oss:120b'
 
 
-def ollama_translate_line(text: str, glossary: dict) -> str:
+# def get_optimal_tokens(text: str) -> dict:
+#     """入力テキストに基づいて最適なトークン数を計算"""
+#     text_length = len(text)
+
+#     if text_length < 100:
+#         return {'num_predict': -1, 'num_ctx': 2048}      # 短文
+#     elif text_length < 500:
+#         return {'num_predict': -1, 'num_ctx': 4096}     # 中文
+#     elif text_length < 1000:
+#         return {'num_predict': -1, 'num_ctx': 4096}    # 長文
+#     else:
+#         return {'num_predict': -1, 'num_ctx': 8192}   # 超長文
+
+
+def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) -> str:
     """Ollama を使用して翻訳（リトライ機能付き）"""
 
-    def translate_attempt(text: str, glossary: dict) -> str:
+    def translate_attempt(text: str, glossary: dict, casual_mode: bool) -> str:
+        # 翻訳スタイルを選択
+        if casual_mode:
+            style_instruction = """ゲームのセリフや会話として、口語的で自然な日本語に翻訳してください。
+翻訳スタイル:
+- キャラクターの感情や性格が伝わるような表現を選択
+- 丁寧語よりも親しみやすい表現を優先"""
+        else:
+            style_instruction = "標準的な日本語に翻訳してください。"
+
         # 翻訳ルールを含むプロンプト
         translation_rules = f"""英語を日本語に翻訳してください。必ず日本語で回答してください。
+
+{style_instruction}
 
 ルール:
 1. 装飾タグ([u][/u], [i][/i], [b][/b], [sup][/sup])は元テキストにある場合のみ保持
@@ -54,6 +79,13 @@ def ollama_translate_line(text: str, glossary: dict) -> str:
                     'content': translation_rules
                 }
             ]
+            # options={
+            #     'num_predict': token_config['num_predict'],
+            #     'num_ctx': token_config['num_ctx'],
+            #     'temperature': 0.1,
+            #     'top_p': 0.9,
+            #     'repeat_penalty': 1.1
+            # }
         )
 
         return response['message']['content'].strip()
@@ -76,12 +108,12 @@ def ollama_translate_line(text: str, glossary: dict) -> str:
         logger.debug(f"使用モデル: {MODEL_NAME}")
 
         # 初回翻訳
-        translated_text = translate_attempt(text, glossary)
+        translated_text = translate_attempt(text, glossary, casual_mode)
 
         # 英語のままの場合はリトライ
         if is_mostly_english(translated_text):
             logger.warning(f"英語のまま翻訳されました。リトライします: {translated_text[:50]}...")
-            translated_text = translate_attempt(text, glossary)
+            translated_text = translate_attempt(text, glossary, casual_mode)
 
         return translated_text
 
@@ -189,22 +221,22 @@ def get_available_vram_gb():
         exit(1)
 
 
-def setup_cpu_only_if_needed(model_name):
-    """VRAM不足時にCPU実行を設定"""
-    model_size = get_model_size_gb(model_name)
-    available_vram = get_available_vram_gb()
+# def setup_cpu_only_if_needed(model_name):
+#     """VRAM不足時にCPU実行を設定"""
+#     model_size = get_model_size_gb(model_name)
+#     available_vram = get_available_vram_gb()
 
-    if model_size and available_vram > 0:
-        required_vram = model_size * 0.8  # 80%のマージン
-        logger.info(f"必要VRAM(推定): {required_vram:.1f}GB")
+#     if model_size and available_vram > 0:
+#         required_vram = model_size * 0.8  # 80%のマージン
+#         logger.info(f"必要VRAM(推定): {required_vram:.1f}GB")
 
-        if available_vram < required_vram:
-            logger.warning("VRAM不足のためCPU実行に切り替えます")
-            os.environ['CUDA_VISIBLE_DEVICES'] = ''
-            os.environ['OLLAMA_NUM_GPU'] = '0'
-            os.environ['NUM_GPU'] = '0'
-        else:
-            logger.info("GPU使用可能です")
+#         if available_vram < required_vram:
+#             logger.warning("VRAM不足のためCPU実行に切り替えます")
+#             os.environ['CUDA_VISIBLE_DEVICES'] = ''
+#             os.environ['OLLAMA_NUM_GPU'] = '0'
+#             os.environ['NUM_GPU'] = '0'
+#         else:
+#             logger.info("GPU使用可能です")
 
 
 def check_ollama_connection():
@@ -221,8 +253,8 @@ def check_ollama_connection():
 
             if any(MODEL_NAME in model for model in available_models):
                 logger.info(f"{MODEL_NAME}モデルが利用可能です")
-                # VRAM不足チェック
-                setup_cpu_only_if_needed(MODEL_NAME)
+                # # VRAM不足チェック
+                # setup_cpu_only_if_needed(MODEL_NAME)
             else:
                 logger.warning(f"{MODEL_NAME}モデルが見つかりません")
                 logger.info(f"利用可能なモデル: {available_models}")
@@ -261,7 +293,7 @@ def main(args):
                     f"用語数: {len(glossary)} → {len(filtered_glossary)}")
 
                 translated_line = ollama_translate_line(
-                    line, filtered_glossary)
+                    line, filtered_glossary, args.casual)
 
                 # 一時コード数をカウント（postprocessor適用前）
                 original_newline_count = line.count('[NLINE]')
@@ -322,6 +354,7 @@ if __name__ == '__main__':
         description="Ollama を使って翻訳")
     parser.add_argument('-i', '--input', required=True, help='入力ファイル')
     parser.add_argument('-o', '--output', help='出力ファイル')
+    parser.add_argument('-c', '--casual', action='store_true', help='口語体モード（ゲームのセリフ用）')
 
     args = parser.parse_args()
 

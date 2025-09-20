@@ -148,6 +148,25 @@ python ollama_translate.py -i Empyrion_localization.txt
 - **行番号**: 問題箇所の特定が容易
 - **統計情報**: 総行数の表示
 
+### 単独でプレビュー生成
+
+`text_preview.py`を単独で使用してHTMLプレビューを生成できます：
+
+```bash
+# 基本的な使用方法（自動でファイル名_preview.htmlが生成される）
+python text_preview.py -i input.txt
+
+# 出力ファイル名を指定
+python text_preview.py -i input.txt -o my_preview.html
+
+# 実行例
+python text_preview.py -i Empyrion_localization_translated.txt
+```
+
+**パラメータ:**
+- `-i, --input`: 入力テキストファイル（必須）
+- `-o, --output`: 出力HTMLファイル（省略可）
+
 ## ⚙️ 設定ファイル
 
 ### 用語集 (deepl_glossary_empyrion.json)
