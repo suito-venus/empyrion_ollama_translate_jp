@@ -15,7 +15,8 @@ from punctuation_formatter import format_punctuation
 logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s]: %(message)s')
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = 'gpt-oss:120b'
+# MODEL_NAME = 'gpt-oss:120b'
+MODEL_NAME = 'gpt-oss:20b'
 
 
 def ollama_translate_line(text: str, glossary: dict,
@@ -38,12 +39,12 @@ def ollama_translate_line(text: str, glossary: dict,
 {style_instruction}
 
 ルール:
-1. 装飾タグ([u][/u], [i][/i], [b][/b], [sup][/sup])は元テキストにある場合のみ保持
-2. カラータグ: [c][色コード]...テキスト...[-][/c] の形式で、[-][/c]で終了します
+1. 装飾タグ([u][/u], [i][/i], <i></i>, [b][/b], <b></b>, [sup][/sup])は元テキストにある場合のみ保持
+2. カラータグ: [c][色コード]...テキスト...[-][/c] あるいは <color=#色コード> ... テキスト ... </color> の形式です
 3. サイズタグ: <size=数字>...テキスト...</size> の形式です
 4. "\\n"は改行コードですが変更しないでください
-5. "@p9"等は読み上げ記号として前後に空白
-6. 結果は１行で出力してください。
+5. "@p9"等は読み上げ記号として前後に空白をいれてください
+6. 結果は１行で出力してください
 
 用語集:
 {glossary_str}

@@ -72,7 +72,7 @@ def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) 
 3. サイズタグ: <size=数字>...テキスト...</size> の形式です
 4. "\\n"は改行コードですが変更しないでください
 5. "@p9"等は読み上げ記号として前後に空白をいれてください
-6. 結果は１行で出力してください。
+6. 結果は１行で出力してください
 
 用語集:
 {', '.join([f"{en}→{ja}" for en, ja in glossary.items()])}
