@@ -19,9 +19,10 @@ logger = logging.getLogger(__name__)
 
 # モデル名を一箇所で管理
 
-# MODEL_NAME = 'gemma-2-llama-swallow-27b-it-v01-q5_0'
-# MODEL_NAME = 'gemma2:27b-instruct-q5_0'
-MODEL_NAME = 'gpt-oss:120b'
+# MODEL_NAME = 'gemma-2-llama-swallow-27b-it-v01-q5_0' - 改行が増えてしまう？
+# MODEL_NAME = 'gemma2:27b-instruct-q5_0'  - 改行が増えてしまう？
+# MODEL_NAME = 'gpt-oss:120b'
+MODEL_NAME = 'gpt-oss:20b'
 
 
 # def get_optimal_tokens(text: str) -> dict:
@@ -42,8 +43,17 @@ def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) 
     """Ollama を使用して翻訳（リトライ機能付き）"""
 
     def translate_attempt(text: str, glossary: dict, casual_mode: bool) -> str:
+        # IDA検出による丁寧語モード
+        is_ida_mode = '[IDA]' in text
+        
         # 翻訳スタイルを選択
-        if casual_mode:
+        if is_ida_mode:
+            style_instruction = """IDA（情報データアシスタント）として、丁寧語で翻訳してください。
+翻訳スタイル:
+- 敬語や丁寧語を使用した礼儀正しい表現
+- 「です・ます」調で統一
+- 専門的で正確な情報提供を意識した表現"""
+        elif casual_mode:
             style_instruction = """ゲームのセリフや会話として、口語的で自然な日本語に翻訳してください。
 翻訳スタイル:
 - キャラクターの感情や性格が伝わるような表現を選択
@@ -57,11 +67,11 @@ def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) 
 {style_instruction}
 
 ルール:
-1. 装飾タグ([u][/u], [i][/i], [b][/b], [sup][/sup])は元テキストにある場合のみ保持
-2. カラータグ: [c][色コード]...テキスト...[-][/c] の形式で、[-][/c]で終了します
+1. 装飾タグ([u][/u], [i][/i], <i></i>, [b][/b], <b></b>, [sup][/sup])は元テキストにある場合のみ保持
+2. カラータグ: [c][色コード]...テキスト...[-][/c] あるいは <color=#色コード> ... テキスト ... </color> の形式です
 3. サイズタグ: <size=数字>...テキスト...</size> の形式です
 4. "\\n"は改行コードですが変更しないでください
-5. "@p9"等は読み上げ記号として前後に空白
+5. "@p9"等は読み上げ記号として前後に空白をいれてください
 6. 結果は１行で出力してください。
 
 用語集:

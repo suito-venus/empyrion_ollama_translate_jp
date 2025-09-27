@@ -7,6 +7,7 @@ ReforgedEden_Localization_work.txt
 ReforgedEden_Localization_work*.txt
 Vanilla_Localizations_work*.txt
 *.zip
+localization_jp/temp
 
 # 翻訳結果ファイル
 *_ollama_*.txt
