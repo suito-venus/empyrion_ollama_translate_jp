@@ -21,8 +21,9 @@ logger = logging.getLogger(__name__)
 
 # MODEL_NAME = 'gemma-2-llama-swallow-27b-it-v01-q5_0' - 改行が増えてしまう？
 # MODEL_NAME = 'gemma2:27b-instruct-q5_0'  - 改行が増えてしまう？
-# MODEL_NAME = 'gpt-oss:120b'
-MODEL_NAME = 'gpt-oss:20b'
+# MODEL_NAME = 'gpt-oss:120b' - すごく重い
+# MODEL_NAME = 'gpt-oss:20b' - 翻訳がちょっと硬いけど動作は良好
+MODEL_NAME = 'gemma3:27b'
 
 
 # def get_optimal_tokens(text: str) -> dict:
@@ -39,18 +40,56 @@ MODEL_NAME = 'gpt-oss:20b'
 #         return {'num_predict': -1, 'num_ctx': 8192}   # 超長文
 
 
+def extract_decoration_tags(text: str) -> set:
+    """テキストから装飾タグの種類を抽出"""
+    tags = set()
+    
+    # 各タグタイプを個別にチェック
+    tag_patterns = {
+        'u': r'\[u\].*?\[/u\]',
+        'i_bracket': r'\[i\].*?\[/i\]',
+        'i_angle': r'<i>.*?</i>',
+        'b_bracket': r'\[b\].*?\[/b\]',
+        'b_angle': r'<b>.*?</b>',
+        'sup': r'\[sup\].*?\[/sup\]',
+        'color_bracket': r'\[c\]\[[A-Fa-f0-9]{6}\].*?(?:\[-\])?\[/c\]',
+        'color_angle': r'<color=#[A-Fa-f0-9]{6}>.*?</color>',
+        'size': r'<size=\d+>.*?</size>'
+    }
+    
+    for tag_type, pattern in tag_patterns.items():
+        if re.search(pattern, text, re.IGNORECASE | re.DOTALL):
+            tags.add(tag_type)
+    
+    return tags
+
+
+def validate_tag_preservation(original_text: str, translated_text: str) -> bool:
+    """装飾タグが保持されているかチェック"""
+    original_tags = extract_decoration_tags(original_text)
+    translated_tags = extract_decoration_tags(translated_text)
+    
+    # 元テキストにあるタグが翻訳後にも存在するかチェック
+    missing_tags = original_tags - translated_tags
+    
+    if missing_tags:
+        logger.warning(f"装飾タグが欠落: {missing_tags}")
+        return False
+    
+    return True
+
+
 def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) -> str:
     """Ollama を使用して翻訳（リトライ機能付き）"""
 
     def translate_attempt(text: str, glossary: dict, casual_mode: bool) -> str:
         # IDA検出による丁寧語モード
         is_ida_mode = '[IDA]' in text
-        
+
         # 翻訳スタイルを選択
         if is_ida_mode:
             style_instruction = """IDA（情報データアシスタント）として、丁寧語で翻訳してください。
 翻訳スタイル:
-- 敬語や丁寧語を使用した礼儀正しい表現
 - 「です・ます」調で統一
 - 専門的で正確な情報提供を意識した表現"""
         elif casual_mode:
@@ -59,20 +98,26 @@ def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) 
 - キャラクターの感情や性格が伝わるような表現を選択
 - 丁寧語よりも親しみやすい表現を優先"""
         else:
-            style_instruction = "標準的な日本語に翻訳してください。"
+            style_instruction = "自然な日本語に翻訳してください。"
 
         # 翻訳ルールを含むプロンプト
         translation_rules = f"""英語を日本語に翻訳してください。必ず日本語で回答してください。
 
 {style_instruction}
 
-ルール:
-1. 装飾タグ([u][/u], [i][/i], <i></i>, [b][/b], <b></b>, [sup][/sup])は元テキストにある場合のみ保持
-2. カラータグ: [c][色コード]...テキスト...[-][/c] あるいは <color=#色コード> ... テキスト ... </color> の形式です
-3. サイズタグ: <size=数字>...テキスト...</size> の形式です
+【重要】タグ保持ルール:
+1. 装飾タグ([u][/u], [i][/i], <i></i>, [b][/b], <b></b>, [sup][/sup])は元テキストにある場合は必ず保持
+2. 【最重要】カラータグは絶対に削除しないでください:
+   - [c][色コード]で始まり[-][/c]で終わる形式
+   - <color=#色コード>で始まり</color>で終わる形式
+   - 行頭の[c][色コード]は特に重要です。必ず翻訳結果の行頭に配置してください
+   - 例: [c][FF0000]Red text[-][/c] → [c][FF0000]赤いテキスト[-][/c]
+3. サイズタグ: <size=数字>...テキスト...</size> の形式も必ず保持
 4. "\\n"は改行コードですが変更しないでください
 5. "@p9"等は読み上げ記号として前後に空白をいれてください
-6. 結果は１行で出力してください
+6. 翻訳対象の文章が会話 XXをyyする のような短い文の場合、会話ではなくゲーム上での指示なので、 XXをyyする などのように動詞で終了するような表現してください
+7. 結果は１行で出力してください
+
 
 用語集:
 {', '.join([f"{en}→{ja}" for en, ja in glossary.items()])}
@@ -98,35 +143,56 @@ def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) 
             # }
         )
 
-        return response['message']['content'].strip()
+        # 翻訳結果を取得して改行を削除
+        return response['message']['content'].replace('\n', '')
 
     def is_mostly_english(text: str) -> bool:
         """テキストが主に英語かどうかを判定"""
         import re
         # タグを除去してテキスト部分のみを抽出
         clean_text = re.sub(r'\[[^\]]*\]|<[^>]*>', '', text)
-        # 英語の単語を検出
-        english_words = re.findall(r'\b[A-Za-z]+\b', clean_text)
-        # 日本語文字を検出
-        japanese_chars = re.findall(r'[ひらがなカタカナ漢字]', clean_text)
-
-        # 英語の単語が多く、日本語文字が少ない場合は英語と判定
-        return (len(english_words) > 3 and
-                len(japanese_chars) < len(english_words))
+        
+        # 日本語文字を検出（正しいUnicode範囲を使用）
+        hiragana = re.findall(r'[\u3041-\u309F]', clean_text)  # ひらがな
+        katakana = re.findall(r'[\u30A1-\u30FF]', clean_text)  # カタカナ
+        kanji = re.findall(r'[\u2E80-\u2FDF\u3005-\u3007\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]', clean_text)  # 漢字
+        
+        japanese_char_count = len(hiragana) + len(katakana) + len(kanji)
+        
+        # 日本語文字が含まれていない場合は英語と判定
+        return japanese_char_count == 0
 
     try:
         logger.debug(f"使用モデル: {MODEL_NAME}")
-
-        # 初回翻訳
-        translated_text = translate_attempt(text, glossary, casual_mode)
-
-        # 英語のままの場合はリトライ
-        if is_mostly_english(translated_text):
-            logger.warning(f"英語のまま翻訳されました。リトライします: {translated_text[:50]}...")
+        
+        max_retries = 3
+        
+        for attempt in range(max_retries + 1):
+            # 翻訳実行
             translated_text = translate_attempt(text, glossary, casual_mode)
-
+            
+            # 英語のままかチェック
+            if is_mostly_english(translated_text):
+                if attempt < max_retries:
+                    logger.warning(f"英語のまま翻訳されました。リトライします({attempt + 1}/{max_retries}): {translated_text[:50]}...")
+                    continue
+                else:
+                    logger.warning(f"英語のまま翻訳されました。最大リトライ回数に達しました: {translated_text[:50]}...")
+            
+            # 装飾タグ保持チェック
+            if not validate_tag_preservation(text, translated_text):
+                if attempt < max_retries:
+                    logger.warning(f"装飾タグが欠落しています。リトライします({attempt + 1}/{max_retries})")
+                    continue
+                else:
+                    logger.warning(f"装飾タグが欠落しています。最大リトライ回数に達しました。処理を続行します。")
+            
+            # 翻訳成功
+            return translated_text
+        
+        # 最大リトライ回数に達した場合は最後の結果を返す
         return translated_text
-
+        
     except Exception as e:
         logger.error("翻訳エラー詳細:")
         logger.error(f"  エラータイプ: {type(e).__name__}")
@@ -252,6 +318,10 @@ def get_available_vram_gb():
 def check_ollama_connection():
     """Ollama接続確認"""
     try:
+        # GPU使用状況を確認
+        logger.info(f"OLLAMA_NUM_GPU: {os.environ.get('OLLAMA_NUM_GPU', '未設定')}")
+        logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', '未設定')}")
+
         models = ollama.list()
         # モデル構造を確認してから処理
         if 'models' in models:

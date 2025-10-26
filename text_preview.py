@@ -39,6 +39,20 @@ def parse_game_text(text: str) -> str:
 
     text = re.sub(r'<size=(\d+)>(.*?)</size>', size_replace, text)
 
+    # 10. カラーコード &lt;color=#HHHHHH&gt;...&lt;/color&gt;
+    def html_color_replace(match):
+        color = match.group(1)
+        content = match.group(2)
+        return f'<span style="color: #{color};">{content}</span>'
+
+    text = re.sub(r'&lt;color=#([0-9A-Fa-f]{6})&gt;(.*?)&lt;/color&gt;', html_color_replace, text)
+
+    # 11. HTMLエスケープされたイタリック &lt;i&gt;...&lt;/i&gt; をイタリック体で表示
+    text = re.sub(r'&lt;i&gt;(.*?)&lt;/i&gt;', r'<i>\1</i>', text)
+
+    # 12. HTMLエスケープされた太字 &lt;b&gt;...&lt;/b&gt; を太字で表示
+    text = re.sub(r'&lt;b&gt;(.*?)&lt;/b&gt;', r'<b>\1</b>', text)
+
     return text
 
 def generate_html_preview(lines: List[str], output_file: str):
