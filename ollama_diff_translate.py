@@ -116,8 +116,8 @@ def filter_glossary_for_text(text: str, full_glossary: dict) -> dict:
     words_in_text = set(re.findall(r'\b[A-Za-z]+\b', text.lower()))
 
     for en_term, ja_term in full_glossary.items():
-        if (en_term.lower() in words_in_text or
-                any(word in en_term.lower() for word in words_in_text)):
+        if (en_term.lower() in words_in_text
+                or any(word in en_term.lower() for word in words_in_text)):
             filtered_glossary[en_term] = ja_term
 
     return filtered_glossary
