@@ -43,7 +43,7 @@ MODEL_NAME = 'gemma3:27b'
 def extract_decoration_tags(text: str) -> set:
     """テキストから装飾タグの種類を抽出"""
     tags = set()
-    
+
     # 各タグタイプを個別にチェック
     tag_patterns = {
         'u': r'\[u\].*?\[/u\]',
@@ -56,11 +56,11 @@ def extract_decoration_tags(text: str) -> set:
         'color_angle': r'<color=#[A-Fa-f0-9]{6}>.*?</color>',
         'size': r'<size=\d+>.*?</size>'
     }
-    
+
     for tag_type, pattern in tag_patterns.items():
         if re.search(pattern, text, re.IGNORECASE | re.DOTALL):
             tags.add(tag_type)
-    
+
     return tags
 
 
@@ -68,14 +68,14 @@ def validate_tag_preservation(original_text: str, translated_text: str) -> bool:
     """装飾タグが保持されているかチェック"""
     original_tags = extract_decoration_tags(original_text)
     translated_tags = extract_decoration_tags(translated_text)
-    
+
     # 元テキストにあるタグが翻訳後にも存在するかチェック
     missing_tags = original_tags - translated_tags
-    
+
     if missing_tags:
         logger.warning(f"装飾タグが欠落: {missing_tags}")
         return False
-    
+
     return True
 
 
@@ -151,26 +151,26 @@ def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) 
         import re
         # タグを除去してテキスト部分のみを抽出
         clean_text = re.sub(r'\[[^\]]*\]|<[^>]*>', '', text)
-        
+
         # 日本語文字を検出（正しいUnicode範囲を使用）
         hiragana = re.findall(r'[\u3041-\u309F]', clean_text)  # ひらがな
         katakana = re.findall(r'[\u30A1-\u30FF]', clean_text)  # カタカナ
         kanji = re.findall(r'[\u2E80-\u2FDF\u3005-\u3007\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]', clean_text)  # 漢字
-        
+
         japanese_char_count = len(hiragana) + len(katakana) + len(kanji)
-        
+
         # 日本語文字が含まれていない場合は英語と判定
         return japanese_char_count == 0
 
     try:
         logger.debug(f"使用モデル: {MODEL_NAME}")
-        
+
         max_retries = 3
-        
+
         for attempt in range(max_retries + 1):
             # 翻訳実行
             translated_text = translate_attempt(text, glossary, casual_mode)
-            
+
             # 英語のままかチェック
             if is_mostly_english(translated_text):
                 if attempt < max_retries:
@@ -178,21 +178,21 @@ def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) 
                     continue
                 else:
                     logger.warning(f"英語のまま翻訳されました。最大リトライ回数に達しました: {translated_text[:50]}...")
-            
+
             # 装飾タグ保持チェック
             if not validate_tag_preservation(text, translated_text):
                 if attempt < max_retries:
                     logger.warning(f"装飾タグが欠落しています。リトライします({attempt + 1}/{max_retries})")
                     continue
                 else:
-                    logger.warning(f"装飾タグが欠落しています。最大リトライ回数に達しました。処理を続行します。")
-            
+                    logger.warning("装飾タグが欠落しています。最大リトライ回数に達しました。処理を続行します。")
+
             # 翻訳成功
             return translated_text
-        
+
         # 最大リトライ回数に達した場合は最後の結果を返す
         return translated_text
-        
+
     except Exception as e:
         logger.error("翻訳エラー詳細:")
         logger.error(f"  エラータイプ: {type(e).__name__}")
@@ -227,8 +227,8 @@ def filter_glossary_for_text(text: str, full_glossary: dict) -> dict:
 
     for en_term, ja_term in full_glossary.items():
         # 用語が翻訳対象テキストに含まれているかチェック
-        if (en_term.lower() in words_in_text or
-                any(word in en_term.lower() for word in words_in_text)):
+        if (en_term.lower() in words_in_text
+                or any(word in en_term.lower() for word in words_in_text)):
             filtered_glossary[en_term] = ja_term
 
     return filtered_glossary
@@ -263,7 +263,8 @@ def get_model_size_gb(model_name):
         for model in models['models']:
             logger.debug(f"モデル詳細: {model}")
             # 様々なキーを試す
-            name = model.get('name') or model.get('model') or model.get('id', '')
+            name = (model.get('name') or model.get('model')
+                    or model.get('id', ''))
             if name == model_name:
                 size_bytes = model.get('size', 0)
                 size_gb = size_bytes / (1024**3)
