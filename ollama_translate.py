@@ -52,6 +52,7 @@ def extract_decoration_tags(text: str) -> set:
         'b_bracket': r'\[b\].*?\[/b\]',
         'b_angle': r'<b>.*?</b>',
         'sup': r'\[sup\].*?\[/sup\]',
+        'sub': r'\[sub\].*?\[/sub\]',
         'color_bracket': r'\[c\]\[[A-Fa-f0-9]{6}\].*?(?:\[-\])?\[/c\]',
         'color_angle': r'<color=#[A-Fa-f0-9]{6}>.*?</color>',
         'size': r'<size=\d+>.*?</size>'
@@ -77,6 +78,37 @@ def validate_tag_preservation(original_text: str, translated_text: str) -> bool:
         return False
 
     return True
+
+
+def validate_newline_preservation(original_text: str, translated_text: str) -> bool:
+    """改行コード(\n)が保持されているかチェック"""
+    original_newlines = original_text.count('\\n')
+    translated_newlines = translated_text.count('\\n')
+    
+    if original_newlines != translated_newlines:
+        logger.warning(f"改行コード数が不一致: 元:{original_newlines}, 翻訳後:{translated_newlines}")
+        return False
+    
+    return True
+
+
+def restore_line_codes(original_text: str, translated_text: str) -> str:
+    """行頭コード(@q0, @d0, @d0@q0)を翻訳後テキストに復元"""
+    # 行頭コードのパターンを定義
+    line_code_patterns = [r'^@d0@q0', r'^@q0', r'^@d0']
+    
+    for pattern in line_code_patterns:
+        if re.match(pattern, original_text):
+            # 元テキストから行頭コードを抽出
+            match = re.match(pattern, original_text)
+            if match:
+                line_code = match.group(0)
+                # 翻訳後テキストに行頭コードがない場合は追加
+                if not translated_text.startswith(line_code):
+                    translated_text = line_code + translated_text
+                break
+    
+    return translated_text
 
 
 def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) -> str:
@@ -106,15 +138,16 @@ def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) 
 {style_instruction}
 
 【重要】タグ保持ルール:
-1. 装飾タグ([u][/u], [i][/i], <i></i>, [b][/b], <b></b>, [sup][/sup])は元テキストにある場合は必ず保持
-2. 【最重要】カラータグは絶対に削除しないでください:
+1. 装飾タグ([u][/u], [i][/i], <i></i>, [b][/b], <b></b>, [sup][/sup],[sub][/sub])は元テキストにある場合は必ず保持
+2. 【最重要】カラータグの正しい位置を維持:
    - [c][色コード]で始まり[-][/c]で終わる形式
    - <color=#色コード>で始まり</color>で終わる形式
-   - 行頭の[c][色コード]は特に重要です。必ず翻訳結果の行頭に配置してください
-   - 例: [c][FF0000]Red text[-][/c] → [c][FF0000]赤いテキスト[-][/c]
+   - カラータグは元テキストと同じ単語を囲むように配置してください
+   - 例1: [c][ffffbe]Enter the[-][/c] Bridge → ブリッジに[c][ffffbe]入る[-][/c]
+   - 例2: [c][eeff00]bartender[-][/c] → [c][eeff00]バーテンダー[-][/c]
 3. サイズタグ: <size=数字>...テキスト...</size> の形式も必ず保持
-4. "\\n"は改行コードですが変更しないでください
-5. "@p9"等は読み上げ記号として前後に空白をいれてください
+4. 【重要】"\\n"は改行コードです。元テキストの\\nの数と同じ数だけ翻訳結果に含めてください。絶対に削除しないでください
+5. 【重要】"@p9", "@q0"等は読み上げ記号として前後に空白をいれてください。絶対に削除しないでください
 6. 翻訳対象の文章が会話 XXをyyする のような短い文の場合、会話ではなくゲーム上での指示なので、 XXをyyする などのように動詞で終了するような表現してください
 7. 結果は１行で出力してください
 
@@ -186,11 +219,23 @@ def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) 
                     continue
                 else:
                     logger.warning("装飾タグが欠落しています。最大リトライ回数に達しました。処理を続行します。")
+            
+            # 改行コード保持チェック
+            if not validate_newline_preservation(text, translated_text):
+                if attempt < max_retries:
+                    logger.warning(f"改行コードが欠落しています。リトライします({attempt + 1}/{max_retries})")
+                    continue
+                else:
+                    logger.warning("改行コードが欠落しています。最大リトライ回数に達しました。処理を続行します。")
 
+            # 行頭コードを復元
+            translated_text = restore_line_codes(text, translated_text)
+            
             # 翻訳成功
             return translated_text
 
         # 最大リトライ回数に達した場合は最後の結果を返す
+        translated_text = restore_line_codes(text, translated_text)
         return translated_text
 
     except Exception as e:

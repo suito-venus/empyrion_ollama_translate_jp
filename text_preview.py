@@ -20,6 +20,9 @@ def parse_game_text(text: str) -> str:
     # 3.5. 上付き文字（60%サイズ） [sup]...[/sup]
     text = re.sub(r'\[sup\](.*?)\[/sup\]', r'<span style="font-size: 0.6em;">\1</span>', text)
 
+    # 3.6. 下付き文字（60%サイズ） [sub]...[/sub]
+    text = re.sub(r'\[sub\](.*?)\[/sub\]', r'<span style="font-size: 0.6em; vertical-align: sub;">\1</span>', text)
+
     # 4. 改行コード \n
     text = text.replace('\\n', '<br>')
 
