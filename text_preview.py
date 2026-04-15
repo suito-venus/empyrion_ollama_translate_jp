@@ -34,13 +34,20 @@ def parse_game_text(text: str) -> str:
 
     text = re.sub(r'\[c\]\[([0-9A-Fa-f]{6})\](.*?)\[-\]\[/c\]', color_replace, text)
 
-    # 9. フォントサイズ <size=NN>...</size>
+    # 9. フォントサイズ <size=NN>...</size> または <size=NN%>...</size>
     def size_replace(match):
         size = match.group(1)
         content = match.group(2)
-        return f'<span style="font-size: {size}px;">{content}</span>'
+        if size.endswith('%'):
+            css_size = f'font-size: {size};'
+        else:
+            css_size = f'font-size: {size}px;'
+        return f'<span style="{css_size}">{content}</span>'
 
-    text = re.sub(r'<size=(\d+)>(.*?)</size>', size_replace, text)
+    text = re.sub(r'<size=(\d+%?)>(.*?)</size>', size_replace, text)
+
+    # 9.5. HTMLエスケープされたフォントサイズ &lt;size=NN&gt;...&lt;/size&gt; または &lt;size=NN%&gt;...&lt;/size&gt;
+    text = re.sub(r'&lt;size=(\d+%?)&gt;(.*?)&lt;/size&gt;', size_replace, text)
 
     # 10. カラーコード &lt;color=#HHHHHH&gt;...&lt;/color&gt;
     def html_color_replace(match):
@@ -49,6 +56,14 @@ def parse_game_text(text: str) -> str:
         return f'<span style="color: #{color};">{content}</span>'
 
     text = re.sub(r'&lt;color=#([0-9A-Fa-f]{6})&gt;(.*?)&lt;/color&gt;', html_color_replace, text)
+
+    # 10.5. カラーコード &lt;#HHHHHH&gt;...&lt;/color&gt; (短縮形式)
+    def short_color_replace(match):
+        color = match.group(1)
+        content = match.group(2)
+        return f'<span style="color: #{color};">{content}</span>'
+
+    text = re.sub(r'&lt;#([0-9A-Fa-f]{6})&gt;(.*?)&lt;/color&gt;', short_color_replace, text)
 
     # 11. HTMLエスケープされたイタリック &lt;i&gt;...&lt;/i&gt; をイタリック体で表示
     text = re.sub(r'&lt;i&gt;(.*?)&lt;/i&gt;', r'<i>\1</i>', text)

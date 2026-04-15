@@ -1,4 +1,5 @@
 import ollama
+from openai import OpenAI
 import json
 import re
 import argparse
@@ -17,13 +18,44 @@ from punctuation_formatter import format_punctuation
 logging.basicConfig(level=logging.DEBUG, format='[%(levelname)s]: %(message)s')
 logger = logging.getLogger(__name__)
 
-# モデル名を一箇所で管理
+# バックエンド設定: 'ollama' または 'llama'
+BACKEND = 'ollama'
+LLAMA_HOST = 'http://localhost:8080'
 
+# モデル名を一箇所で管理
+# Ollama用モデル名
 # MODEL_NAME = 'gemma-2-llama-swallow-27b-it-v01-q5_0' - 改行が増えてしまう？
 # MODEL_NAME = 'gemma2:27b-instruct-q5_0'  - 改行が増えてしまう？
 # MODEL_NAME = 'gpt-oss:120b' - すごく重い
 # MODEL_NAME = 'gpt-oss:20b' - 翻訳がちょっと硬いけど動作は良好
-MODEL_NAME = 'gemma3:27b'
+# MODEL_NAME = 'gemma3:27b' - good
+OLLAMA_MODEL_NAME = 'gemma4:26b'
+
+# llama-server用モデル名（自動検出するのでデフォルトは空）
+LLAMA_MODEL_NAME = ''
+
+MODEL_NAME = OLLAMA_MODEL_NAME
+
+
+def get_llama_client():
+    """llama-server用のOpenAIクライアントを取得"""
+    return OpenAI(base_url=f"{LLAMA_HOST}/v1", api_key="no-key")
+
+
+def detect_llama_model():
+    """llama-serverからロード中のモデル名を自動検出"""
+    try:
+        client = get_llama_client()
+        models = client.models.list()
+        if models.data:
+            model_id = models.data[0].id
+            logger.info(f"llama-server モデル検出: {model_id}")
+            return model_id
+        logger.warning("llama-server にモデルが見つかりません")
+        return None
+    except Exception as e:
+        logger.error(f"llama-server モデル検出エラー: {e}")
+        return None
 
 
 # def get_optimal_tokens(text: str) -> dict:
@@ -159,25 +191,37 @@ def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) 
 
 日本語翻訳:"""
 
-        response = ollama.chat(
-            model=MODEL_NAME,
-            messages=[
-                {
-                    'role': 'user',
-                    'content': translation_rules
-                }
-            ]
-            # options={
-            #     'num_predict': token_config['num_predict'],
-            #     'num_ctx': token_config['num_ctx'],
-            #     'temperature': 0.1,
-            #     'top_p': 0.9,
-            #     'repeat_penalty': 1.1
-            # }
-        )
-
-        # 翻訳結果を取得して改行を削除
-        return response['message']['content'].replace('\n', '')
+        if BACKEND == 'llama':
+            client = get_llama_client()
+            response = client.chat.completions.create(
+                model=MODEL_NAME,
+                messages=[
+                    {
+                        'role': 'user',
+                        'content': translation_rules
+                    }
+                ]
+            )
+            return response.choices[0].message.content.replace('\n', '')
+        else:
+            response = ollama.chat(
+                model=MODEL_NAME,
+                messages=[
+                    {
+                        'role': 'user',
+                        'content': translation_rules
+                    }
+                ]
+                # options={
+                #     'num_predict': token_config['num_predict'],
+                #     'num_ctx': token_config['num_ctx'],
+                #     'temperature': 0.1,
+                #     'top_p': 0.9,
+                #     'repeat_penalty': 1.1
+                # }
+            )
+            # 翻訳結果を取得して改行を削除
+            return response['message']['content'].replace('\n', '')
 
     def is_mostly_english(text: str) -> bool:
         """テキストが主に英語かどうかを判定"""
@@ -301,6 +345,23 @@ def processor_words(src_str: str, processor_words: list[str]) -> str:
 
 def get_model_size_gb(model_name):
     """モデルのサイズをGB単位で取得"""
+    if BACKEND == 'llama':
+        try:
+            client = get_llama_client()
+            models = client.models.list()
+            for model in models.data:
+                if model.id == model_name:
+                    meta = getattr(model, 'meta', None)
+                    if meta and hasattr(meta, 'size'):
+                        size_gb = meta.size / (1024**3)
+                        logger.info(f"モデルサイズ: {size_gb:.1f}GB")
+                        return size_gb
+            logger.warning(f"モデル {model_name} のサイズ情報が取得できません")
+            return None
+        except Exception as e:
+            logger.error(f"モデルサイズ取得エラー: {e}")
+            return None
+
     try:
         models = ollama.list()
         logger.debug(f"モデル情報: {models}")
@@ -362,12 +423,28 @@ def get_available_vram_gb():
 
 
 def check_ollama_connection():
-    """Ollama接続確認"""
+    """LLMバックエンド接続確認"""
     try:
         # GPU使用状況を確認
         logger.info(f"OLLAMA_NUM_GPU: {os.environ.get('OLLAMA_NUM_GPU', '未設定')}")
         logger.info(f"CUDA_VISIBLE_DEVICES: {os.environ.get('CUDA_VISIBLE_DEVICES', '未設定')}")
 
+        if BACKEND == 'llama':
+            logger.info(f"バックエンド: llama-server ({LLAMA_HOST})")
+            client = get_llama_client()
+            models = client.models.list()
+            available_models = [m.id for m in models.data]
+            if available_models:
+                logger.info(f"利用可能なモデル: {available_models}")
+                if any(MODEL_NAME in model for model in available_models):
+                    logger.info(f"{MODEL_NAME}モデルが利用可能です")
+                else:
+                    logger.warning(f"{MODEL_NAME}モデルが見つかりません")
+            else:
+                logger.warning("llama-server にモデルがロードされていません")
+            return
+
+        logger.info("バックエンド: Ollama")
         models = ollama.list()
         # モデル構造を確認してから処理
         if 'models' in models:
@@ -388,8 +465,32 @@ def check_ollama_connection():
             logger.warning("モデル一覧の取得に失敗しました")
 
     except Exception as e:
-        logger.error(f"Ollama接続エラー: {e}")
-        logger.error("ollama serveが起動していることを確認してください")
+        logger.error(f"LLMバックエンド接続エラー: {e}")
+        if BACKEND == 'llama':
+            logger.error(f"llama-server ({LLAMA_HOST}) が起動していることを確認してください")
+        else:
+            logger.error("ollama serveが起動していることを確認してください")
+
+
+def setup_backend(backend, llama_host, model=None):
+    """バックエンド設定をグローバルに反映"""
+    global BACKEND, LLAMA_HOST, MODEL_NAME
+    BACKEND = backend
+    LLAMA_HOST = llama_host
+
+    if model:
+        MODEL_NAME = model
+    elif backend == 'llama':
+        detected = detect_llama_model()
+        if detected:
+            MODEL_NAME = detected
+        elif LLAMA_MODEL_NAME:
+            MODEL_NAME = LLAMA_MODEL_NAME
+        else:
+            logger.error("llama-server のモデル名を検出できませんでした。--model で指定してください。")
+            exit(1)
+    else:
+        MODEL_NAME = OLLAMA_MODEL_NAME
 
 
 def main(args):
@@ -477,12 +578,21 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description="Ollama を使って翻訳")
+        description="Ollama/llama-server を使って翻訳")
     parser.add_argument('-i', '--input', required=True, help='入力ファイル')
     parser.add_argument('-o', '--output', help='出力ファイル')
     parser.add_argument('-c', '--casual', action='store_true', help='口語体モード（ゲームのセリフ用）')
+    parser.add_argument('--backend', choices=['ollama', 'llama'], default='ollama',
+                        help='LLMバックエンド (デフォルト: ollama)')
+    parser.add_argument('--llama-host', default='http://localhost:8080',
+                        help='llama-serverのホスト (デフォルト: http://localhost:8080)')
+    parser.add_argument('--model', default=None,
+                        help='モデル名を指定（省略時はデフォルト値を使用）')
 
     args = parser.parse_args()
+
+    # バックエンド設定を反映
+    setup_backend(args.backend, args.llama_host, args.model)
 
     if args.output is None:
         tdatetime = dt.now()

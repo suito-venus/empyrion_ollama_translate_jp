@@ -35,8 +35,8 @@ curl -fsSL https://ollama.com/install.sh | sh
 # 環境変数設定（オプション）
 export OLLAMA_MODELS="/path/to/your/models"
 
-# Gemma2-27B Q5_0モデルをダウンロード（約19GB）
-ollama pull gemma2:27b-instruct-q5_0
+# Gemma4-26B-A4Eモデルをダウンロード（約18GB）
+ollama pull gemma4:26b
 ```
 
 ### 3. Pythonパッケージインストール
