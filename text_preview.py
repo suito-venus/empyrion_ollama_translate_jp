@@ -71,6 +71,9 @@ def parse_game_text(text: str) -> str:
     # 12. HTMLエスケープされた太字 &lt;b&gt;...&lt;/b&gt; を太字で表示
     text = re.sub(r'&lt;b&gt;(.*?)&lt;/b&gt;', r'<b>\1</b>', text)
 
+    # 13. HTMLエスケープされた下線 &lt;u&gt;...&lt;/u&gt; を下線で表示
+    text = re.sub(r'&lt;u&gt;(.*?)&lt;/u&gt;', r'<u>\1</u>', text)
+
     return text
 
 def generate_html_preview(lines: List[str], output_file: str):

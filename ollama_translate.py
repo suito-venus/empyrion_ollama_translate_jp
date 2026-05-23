@@ -8,7 +8,7 @@ import time
 import logging
 import os
 import subprocess
-from tag_validator import check_translation_tags
+from tag_validator import check_translation_tags, validate_html_tags
 from content_filter_detector import detect_content_filter
 from color_tag_fixer import fix_color_tags
 from text_preview import generate_html_preview
@@ -109,6 +109,30 @@ def validate_tag_preservation(original_text: str, translated_text: str) -> bool:
         logger.warning(f"装飾タグが欠落: {missing_tags}")
         return False
 
+    # HTMLタグの開始/終了数の一致チェック
+    html_tag_pairs = [
+        (r'<b>', r'</b>', 'HTML bold (<b>)'),
+        (r'<i>', r'</i>', 'HTML italic (<i>)'),
+        (r'<u>', r'</u>', 'HTML underline (<u>)'),
+        (r'<color=#[A-Fa-f0-9]{6}>', r'</color>', 'HTML color (<color>)'),
+        (r'<size=\d+>', r'</size>', 'HTML size (<size>)'),
+    ]
+
+    for start_pattern, end_pattern, tag_name in html_tag_pairs:
+        orig_start = len(re.findall(start_pattern, original_text))
+        orig_end = len(re.findall(end_pattern, original_text))
+        trans_start = len(re.findall(start_pattern, translated_text))
+        trans_end = len(re.findall(end_pattern, translated_text))
+
+        if orig_start != trans_start:
+            logger.warning(
+                f"{tag_name}開始タグ数が不一致: 元={orig_start}, 翻訳後={trans_start}")
+            return False
+        if orig_end != trans_end:
+            logger.warning(
+                f"{tag_name}終了タグ数が不一致: 元={orig_end}, 翻訳後={trans_end}")
+            return False
+
     return True
 
 
@@ -146,7 +170,8 @@ def restore_line_codes(original_text: str, translated_text: str) -> str:
 def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) -> str:
     """Ollama を使用して翻訳（リトライ機能付き）"""
 
-    def translate_attempt(text: str, glossary: dict, casual_mode: bool) -> str:
+    def translate_attempt(text: str, glossary: dict, casual_mode: bool,
+                          retry_feedback: str = "") -> str:
         # IDA検出による丁寧語モード
         is_ida_mode = '[IDA]' in text
 
@@ -164,11 +189,19 @@ def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) 
         else:
             style_instruction = "自然な日本語に翻訳してください。"
 
+        # リトライ時のフィードバック指示
+        feedback_section = ""
+        if retry_feedback:
+            feedback_section = f"""
+【修正指示】前回の翻訳で以下の問題が検出されました。今回は必ず修正してください:
+{retry_feedback}
+"""
+
         # 翻訳ルールを含むプロンプト
         translation_rules = f"""英語を日本語に翻訳してください。必ず日本語で回答してください。
 
 {style_instruction}
-
+{feedback_section}
 【重要】タグ保持ルール:
 1. 装飾タグ([u][/u], [i][/i], <i></i>, [b][/b], <b></b>, [sup][/sup],[sub][/sub])は元テキストにある場合は必ず保持
 2. 【最重要】カラータグの正しい位置を維持:
@@ -243,15 +276,23 @@ def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) 
         logger.debug(f"使用モデル: {MODEL_NAME}")
 
         max_retries = 3
+        retry_feedback = ""  # リトライ時にLLMに伝えるフィードバック
 
         for attempt in range(max_retries + 1):
-            # 翻訳実行
-            translated_text = translate_attempt(text, glossary, casual_mode)
+            # 翻訳実行（リトライ時はフィードバック付き）
+            translated_text = translate_attempt(
+                text, glossary, casual_mode, retry_feedback)
+
+            # エラー情報を収集（次のリトライ用）
+            feedback_messages = []
 
             # 英語のままかチェック
             if is_mostly_english(translated_text):
                 if attempt < max_retries:
                     logger.warning(f"英語のまま翻訳されました。リトライします({attempt + 1}/{max_retries}): {translated_text[:50]}...")
+                    feedback_messages.append(
+                        "- 翻訳結果が英語のままです。必ず日本語に翻訳してください。")
+                    retry_feedback = "\n".join(feedback_messages)
                     continue
                 else:
                     logger.warning(f"英語のまま翻訳されました。最大リトライ回数に達しました: {translated_text[:50]}...")
@@ -260,14 +301,49 @@ def ollama_translate_line(text: str, glossary: dict, casual_mode: bool = False) 
             if not validate_tag_preservation(text, translated_text):
                 if attempt < max_retries:
                     logger.warning(f"装飾タグが欠落しています。リトライします({attempt + 1}/{max_retries})")
+                    feedback_messages.append(
+                        "- HTMLタグの数が元テキストと一致しません。"
+                        "<b>は必ず</b>で閉じ、<color=#XXXXXX>は必ず</color>で閉じてください。"
+                        "タグの'>'を省略しないでください。")
+                    retry_feedback = "\n".join(feedback_messages)
                     continue
                 else:
                     logger.warning("装飾タグが欠落しています。最大リトライ回数に達しました。処理を続行します。")
             
+            # HTMLタグの構文チェック（壊れたタグの検出）
+            html_errors = validate_html_tags(translated_text)
+            if html_errors:
+                if attempt < max_retries:
+                    for err in html_errors:
+                        logger.warning(f"HTMLタグ検証エラー: {err}")
+                    logger.warning(f"HTMLタグが壊れています。リトライします({attempt + 1}/{max_retries})")
+                    # 具体的なエラー内容をフィードバックに含める
+                    feedback_messages.append(
+                        "- HTMLタグが壊れています。以下のエラーを修正してください:")
+                    for err in html_errors:
+                        feedback_messages.append(f"  {err}")
+                    feedback_messages.append(
+                        "- 全てのHTMLタグは正しく閉じてください: "
+                        "<b>...</b>, <i>...</i>, <color=#XXXXXX>...</color>")
+                    retry_feedback = "\n".join(feedback_messages)
+                    continue
+                else:
+                    for err in html_errors:
+                        logger.warning(f"HTMLタグ検証エラー: {err}")
+                    logger.warning("HTMLタグが壊れています。最大リトライ回数に達しました。処理を続行します。")
+
             # 改行コード保持チェック
             if not validate_newline_preservation(text, translated_text):
                 if attempt < max_retries:
                     logger.warning(f"改行コードが欠落しています。リトライします({attempt + 1}/{max_retries})")
+                    original_count = text.count('\\n')
+                    translated_count = translated_text.count('\\n')
+                    feedback_messages.append(
+                        f"- 改行コード(\\n)の数が不一致です。"
+                        f"元テキストには{original_count}個の\\nがありますが、"
+                        f"翻訳結果には{translated_count}個しかありません。"
+                        f"必ず{original_count}個の\\nを含めてください。")
+                    retry_feedback = "\n".join(feedback_messages)
                     continue
                 else:
                     logger.warning("改行コードが欠落しています。最大リトライ回数に達しました。処理を続行します。")
