@@ -383,18 +383,20 @@ def load_glossary(filename: str) -> dict:
 
 
 def filter_glossary_for_text(text: str, full_glossary: dict) -> dict:
-    """翻訳対象テキストに含まれる単語のみを抽出"""
-    import re
+    """翻訳対象テキストに含まれる用語のみを抽出（部分文字列マッチ）"""
     filtered_glossary = {}
-
-    # テキストを単語に分割
-    words_in_text = set(re.findall(r'\b[A-Za-z]+\b', text.lower()))
+    text_lower = text.lower()
 
     for en_term, ja_term in full_glossary.items():
-        # 用語が翻訳対象テキストに含まれているかチェック
-        if (en_term.lower() in words_in_text
-                or any(word in en_term.lower() for word in words_in_text)):
-            filtered_glossary[en_term] = ja_term
+        en_lower = en_term.lower()
+        # 短い用語（3文字以下）は単語境界でマッチ
+        if len(en_term) <= 3:
+            if re.search(r'\b' + re.escape(en_lower) + r'\b', text_lower):
+                filtered_glossary[en_term] = ja_term
+        else:
+            # 4文字以上の用語はテキスト内に部分文字列として存在するかチェック
+            if en_lower in text_lower:
+                filtered_glossary[en_term] = ja_term
 
     return filtered_glossary
 
