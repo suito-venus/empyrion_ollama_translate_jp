@@ -585,11 +585,26 @@ def main(args):
     with open(args.input, 'r', encoding='utf_8') as inputfile:
         lines = inputfile.readlines()
 
+    total_lines = len(lines)
+    start_time = time.time()
+
     with open(args.output, 'w', encoding='utf_8') as outputfile:
         for line_no, raw_line in enumerate(lines, 1):
             line = processor_words(raw_line, preprocessor_words)
 
-            logger.info(f"翻訳中: {line_no}行目")
+            elapsed = time.time() - start_time
+            percent = (line_no / total_lines) * 100
+            if line_no > 1:
+                avg_per_line = elapsed / (line_no - 1)
+                remaining = avg_per_line * (total_lines - line_no + 1)
+            else:
+                remaining = 0
+            logger.info(
+                f"翻訳中: {line_no}/{total_lines} 行目"
+                f" ( {percent:.1f}% )"
+                f"  経過時間: {elapsed:.0f} 秒"
+                f"  予想残り時間: {remaining:.0f} 秒"
+            )
 
             try:
                 # 翻訳対象テキストに関連する用語のみを抽出
